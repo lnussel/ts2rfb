@@ -1,0 +1,7 @@
+bin_PROGRAMS = ts2rfb
+
+ts2rfb_SOURCES =  \
+		  ts2rfb.c
+
+ts2rfb_CPPFLAGS = $(FFMPEG_CFLAGS)
+ts2rfb_LDADD = $(FFMPEG_LIBS)

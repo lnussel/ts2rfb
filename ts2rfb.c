@@ -170,7 +170,11 @@ int main (int argc, char **argv)
 {
     int ret = 0, got_frame;
 
-    src_filename = argv[1];
+    if (argc < 2 || !strcmp(argv[1], "-")) {
+	src_filename = "pipe:";
+    } else {
+	src_filename = argv[1];
+    }
 
     /* register all formats and codecs */
     av_register_all();

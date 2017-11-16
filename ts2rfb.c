@@ -42,6 +42,19 @@ static AVFrame *frame = NULL;
 static AVPacket pkt;
 static int video_frame_count = 0;
 
+static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
+                     const char *filename)
+{
+    FILE *f;
+    int i;
+
+    f = fopen(filename,"w");
+    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+    for (i = 0; i < ysize; i++)
+        fwrite(buf + i * wrap, 1, xsize, f);
+    fclose(f);
+}
+
 static int decode_packet(int *got_frame, int cached)
 {
     int ret = 0;
@@ -78,6 +91,13 @@ static int decode_packet(int *got_frame, int cached)
                    cached ? "(cached)" : "",
                    video_frame_count++, frame->coded_picture_number);
 
+	    char fn[1024];
+	    snprintf(fn, sizeof(fn), "frame-%d.pgm", video_frame_count);
+	    pgm_save(frame->data[0], frame->linesize[0],
+                 frame->width, frame->height, fn);
+
+
+#if 0
             /* copy decoded frame to destination buffer:
              * this is required since rawvideo expects non aligned data */
             av_image_copy(video_dst_data, video_dst_linesize,
@@ -85,7 +105,8 @@ static int decode_packet(int *got_frame, int cached)
                           pix_fmt, width, height);
 
             /* write to rawvideo file */
-//            fwrite(video_dst_data[0], 1, video_dst_bufsize, video_dst_file);
+            fwrite(video_dst_data[0], 1, video_dst_bufsize, video_dst_file);
+#endif
         }
     }
 

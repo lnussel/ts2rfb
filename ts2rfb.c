@@ -25,6 +25,11 @@
 #include <libavutil/samplefmt.h>
 #include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+
+#define DST_IMG_W   1024
+#define DST_IMG_H   768
+#define DST_IMG_FMT AV_PIX_FMT_RGB24
 
 static AVFormatContext *fmt_ctx = NULL;
 static AVCodecContext *video_dec_ctx = NULL;
@@ -41,17 +46,18 @@ static int video_stream_idx = -1;
 static AVFrame *frame = NULL;
 static AVPacket pkt;
 static int video_frame_count = 0;
+struct SwsContext *sws_ctx;
 
-static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
+static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
                      const char *filename)
 {
     FILE *f;
     int i;
 
     f = fopen(filename,"w");
-    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+    fprintf(f, "P6\n%d %d 255\n", xsize, ysize);
     for (i = 0; i < ysize; i++)
-        fwrite(buf + i * wrap, 1, xsize, f);
+        fwrite(buf + i * wrap, 1, xsize*3, f);
     fclose(f);
 }
 
@@ -91,10 +97,15 @@ static int decode_packet(int *got_frame, int cached)
                    cached ? "(cached)" : "",
                    video_frame_count++, frame->coded_picture_number);
 
+	    /* convert to destination format */
+	    sws_scale(sws_ctx,
+		    frame->data, frame->linesize, 0, frame->height,
+			video_dst_data, video_dst_linesize);
+
 	    char fn[1024];
-	    snprintf(fn, sizeof(fn), "frame-%d.pgm", video_frame_count);
-	    pgm_save(frame->data[0], frame->linesize[0],
-                 frame->width, frame->height, fn);
+	    snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
+	    ppm_save(video_dst_data[0], video_dst_linesize[0],
+		 DST_IMG_W, DST_IMG_H, fn);
 
 
 #if 0
@@ -198,20 +209,30 @@ int main (int argc, char **argv)
         width = video_dec_ctx->width;
         height = video_dec_ctx->height;
         pix_fmt = video_dec_ctx->pix_fmt;
-        ret = av_image_alloc(video_dst_data, video_dst_linesize,
-                             width, height, pix_fmt, 1);
-        if (ret < 0) {
-            fprintf(stderr, "Could not allocate raw video buffer\n");
-            goto end;
-        }
-        video_dst_bufsize = ret;
     }
+
+    if (!video_stream) {
+        fprintf(stderr, "Could not find video stream in the input, aborting\n");
+        ret = 1;
+        goto end;
+    }
+
+    ret = av_image_alloc(video_dst_data, video_dst_linesize,
+			 DST_IMG_W, DST_IMG_H, DST_IMG_FMT, 1);
+    if (ret < 0) {
+	fprintf(stderr, "Could not allocate raw video buffer\n");
+	goto end;
+    }
+    video_dst_bufsize = ret;
 
     /* dump input information to stderr */
     av_dump_format(fmt_ctx, 0, src_filename, 0);
 
-    if (!video_stream) {
-        fprintf(stderr, "Could not find video stream in the input, aborting\n");
+    sws_ctx = sws_getContext(width, height, pix_fmt,
+                             DST_IMG_W, DST_IMG_H, DST_IMG_FMT,
+                             0, NULL, NULL, NULL);
+    if (!sws_ctx) {
+        fprintf(stderr, "Failed to create scale context for conversion\n");
         ret = 1;
         goto end;
     }

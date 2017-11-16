@@ -11,7 +11,7 @@ dnl Checks for header files.
 AC_HEADER_STDC
 
 
-PKG_CHECK_MODULES(FFMPEG, [libavformat libavutil libavcodec])
+PKG_CHECK_MODULES(FFMPEG, [libavformat libavutil libavcodec libswscale])
 AC_SUBST(FFMPEG_CFLAGS)
 AC_SUBST(FFMPEG_LIBS)
 

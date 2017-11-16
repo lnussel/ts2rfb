@@ -27,6 +27,11 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
+#include <rfb/rfb.h>
+#include <rfb/keysym.h>
+
+#define DIMOF(x) (sizeof(x)/sizeof(x[0]))
+
 #define DST_IMG_W   1024
 #define DST_IMG_H   768
 #define DST_IMG_FMT AV_PIX_FMT_RGB24
@@ -47,6 +52,9 @@ static AVFrame *frame = NULL;
 static AVPacket pkt;
 static int video_frame_count = 0;
 struct SwsContext *sws_ctx;
+
+
+static rfbScreenInfoPtr rfbScreen;
 
 static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
                      const char *filename)
@@ -177,7 +185,39 @@ static int open_codec_context(int *stream_idx,
     return 0;
 }
 
-int main (int argc, char **argv)
+static void HandleKey(rfbBool down,rfbKeySym key,rfbClientPtr cl)
+{
+    if(down && (key==XK_Escape || key=='q' || key=='Q'))
+	rfbCloseClient(cl);
+}
+
+void run_vnc()
+{
+    char* argv[] = {
+	"main",
+	NULL,
+    };
+    int argc = DIMOF(argv)-1;
+    unsigned bitsPerPixel = 24;
+    unsigned bytesPerPixel = 4;
+
+    rfbScreen = rfbGetScreen(&argc,argv, DST_IMG_W, DST_IMG_H, 8,(bitsPerPixel+7)/8,bytesPerPixel);
+    if(!rfbScreen) {
+	fputs("failed to init rfbscreen", stderr);
+	exit(1);
+    }
+    rfbScreen->desktopName = "HDMI";
+    rfbScreen->alwaysShared = TRUE;
+    rfbScreen->kbdAddEvent = HandleKey;
+
+    rfbScreen->frameBuffer = (char*)malloc(DST_IMG_W*bytesPerPixel*height);
+
+    rfbInitServer(rfbScreen);
+
+    rfbRunEventLoop(rfbScreen,40000,TRUE);
+}
+
+int main (int argc, char *argv[])
 {
     int ret = 0, got_frame;
 
@@ -244,6 +284,8 @@ int main (int argc, char **argv)
         goto end;
     }
 
+    run_vnc();
+
     /* initialize packet, set data to NULL, let the demuxer fill it */
     av_init_packet(&pkt);
     pkt.data = NULL;
@@ -271,6 +313,7 @@ int main (int argc, char **argv)
 
     printf("Demuxing succeeded.\n");
 
+    sleep(1000);
 end:
     avcodec_free_context(&video_dec_ctx);
     avformat_close_input(&fmt_ctx);

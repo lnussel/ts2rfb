@@ -15,6 +15,10 @@ PKG_CHECK_MODULES(FFMPEG, [libavformat libavutil libavcodec libswscale])
 AC_SUBST(FFMPEG_CFLAGS)
 AC_SUBST(FFMPEG_LIBS)
 
+PKG_CHECK_MODULES(VNC, [libvncserver])
+AC_SUBST(VNC_CFLAGS)
+AC_SUBST(VNC_LIBS)
+
 dnl Use -Wall if we have gcc.
 changequote(,)dnl
 if test "x$GCC" = "xyes"; then

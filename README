@@ -1,0 +1,50 @@
+Read a video stream and provide it as VNC display.
+
+The idea is to take the output of the "Lenkeng HDMI over IP extender – LKV373A"
+(https://blog.danman.eu/new-version-of-lenkeng-hdmi-over-ip-extender-lkv373a/)
+and provide it for openQA.
+
+Requirements:
+
+ - ffmpeg-devel
+ - libvncserver-devel (plus deps that are not pulled in by the package
+   automatically, like libjpeg8-devel etc.)
+
+Building:
+
+  - autoreconf -i
+  - ./configure
+  - make
+
+Running:
+
+  - make sure multicast route is installed
+    # ip r a 239.255.0.0/16 dev eth0
+  - if ffmpeg can't deal with empty udp packets (see blog above)
+    # iptables -t raw -A PREROUTING -p udp -m length --length 28 -j DROP
+  - ./ts2rfb udp://239.255.42.42:5004
+  - vncviewer localhost :0
+
+Integration with openQA:
+
+  - need to use "generalhw" backend. workers.ini:
+    [1]
+    BACKEND=generalhw
+    WORKER_CLASS=rp3
+    WORKER_HOSTNAME=localhost
+    GENERAL_HW_VNC_IP=127.0.0.1
+    GENERAL_HW_CMD_DIR=/path/to/openqa/worker/commands
+    GENERAL_HW_SOL_CMD=sol
+    GENERAL_HW_POWEROFF_CMD=off
+    GENERAL_HW_POWERON_CMD=on
+
+    none of the commands are implemented yet, just link them to /bin/true
+
+Caveats/TODO:
+
+  - the whole thing is a hack with no error checking etc
+  - colors seem to be not quite correct. video stream problem or VNC?
+  - run ffmpeg decoding only when VNC client connects, shut it down afterwards
+  - use USB OTG to handle keyboard and mouse events on devices that support it
+  - implement custom vnc messages for power and serial
+  - solve SD card switching

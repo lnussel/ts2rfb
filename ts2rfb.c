@@ -253,6 +253,7 @@ int main (int argc, char *argv[])
 
     /* register all formats and codecs */
     av_register_all();
+    avformat_network_init();
 
     /* open input file, and allocate format context */
     if (avformat_open_input(&fmt_ctx, src_filename, NULL, NULL) < 0) {

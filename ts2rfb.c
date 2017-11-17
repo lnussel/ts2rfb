@@ -224,6 +224,7 @@ void run_vnc()
     int argc = DIMOF(argv)-1;
     unsigned bitsPerPixel = 24;
     unsigned bytesPerPixel = 4;
+    char* port;
 
     rfbScreen = rfbGetScreen(&argc,argv, DST_IMG_W, DST_IMG_H, 8,(bitsPerPixel+7)/8,bytesPerPixel);
     if(!rfbScreen) {
@@ -235,6 +236,13 @@ void run_vnc()
     rfbScreen->kbdAddEvent = HandleKey;
 
     rfbScreen->frameBuffer = (char*)malloc(DST_IMG_W*bytesPerPixel*height);
+
+    // for openQA
+    if ((port = getenv("VNC"))) {
+        int i = atoi(port);
+        rfbScreen->port = 5900 + i;
+        rfbScreen->ipv6port = 5900 + i;
+    }
 
     rfbInitServer(rfbScreen);
 

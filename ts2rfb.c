@@ -34,7 +34,7 @@
 
 #define DST_IMG_W   1024
 #define DST_IMG_H   768
-#define DST_IMG_FMT AV_PIX_FMT_RGB24
+#define DST_IMG_FMT AV_PIX_FMT_RGB32
 
 static AVFormatContext *fmt_ctx = NULL;
 static AVCodecContext *video_dec_ctx = NULL;
@@ -67,6 +67,12 @@ static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
     for (i = 0; i < ysize; i++)
         fwrite(buf + i * wrap, 1, xsize*3, f);
     fclose(f);
+}
+
+static void update_framebuffer(const uint8_t *buf, int wrap, int xsize, int ysize)
+{
+    memcpy(rfbScreen->frameBuffer, buf, xsize * ysize * 4);
+    rfbMarkRectAsModified(rfbScreen,0,0, xsize, ysize);
 }
 
 static int decode_packet(int *got_frame, int cached)
@@ -110,10 +116,17 @@ static int decode_packet(int *got_frame, int cached)
 		    frame->data, frame->linesize, 0, frame->height,
 			video_dst_data, video_dst_linesize);
 
+#ifdef WRITE_FILE
 	    char fn[1024];
 	    snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
 	    ppm_save(video_dst_data[0], video_dst_linesize[0],
 		 DST_IMG_W, DST_IMG_H, fn);
+#else
+
+	    update_framebuffer(video_dst_data[0], video_dst_linesize[0],
+		 DST_IMG_W, DST_IMG_H);
+
+#endif
 
 
 #if 0

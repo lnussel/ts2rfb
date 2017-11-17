@@ -56,6 +56,7 @@ struct SwsContext *sws_ctx;
 
 static rfbScreenInfoPtr rfbScreen;
 
+// for AV_PIX_FMT_RGB24
 static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
                      const char *filename)
 {
@@ -94,22 +95,32 @@ static int decode_packet(int *got_frame, int cached)
 
             if (frame->width != width || frame->height != height ||
                 frame->format != pix_fmt) {
-                /* To handle this change, one could call av_image_alloc again and
-                 * decode the following frames into another rawvideo file. */
-                fprintf(stderr, "Error: Width, height and pixel format have to be "
-                        "constant in a rawvideo file, but the width, height or "
-                        "pixel format of the input video changed:\n"
+                fprintf(stderr, "Warning: Input video format change:\n"
                         "old: width = %d, height = %d, format = %s\n"
                         "new: width = %d, height = %d, format = %s\n",
                         width, height, av_get_pix_fmt_name(pix_fmt),
                         frame->width, frame->height,
                         av_get_pix_fmt_name(frame->format));
-                return -1;
+
+		width = frame->width;
+		height = frame->height;
+		pix_fmt = frame->format;
+
+		sws_ctx = sws_getCachedContext(sws_ctx, width, height, pix_fmt,
+					 DST_IMG_W, DST_IMG_H, DST_IMG_FMT,
+					 0, NULL, NULL, NULL);
+		if (!sws_ctx) {
+		    fprintf(stderr, "Failed to create scale context for conversion\n");
+		    return -1;
+		}
             }
 
+
+#if 0
             printf("video_frame%s n:%d coded_n:%d\n",
                    cached ? "(cached)" : "",
                    video_frame_count++, frame->coded_picture_number);
+#endif
 
 	    /* convert to destination format */
 	    sws_scale(sws_ctx,

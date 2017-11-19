@@ -57,20 +57,26 @@ static int fb_width;
 static int fb_height;
 static int fb_depth;
 
+//#define DEBUG_PPM
+
 #ifdef DEBUG_PPM
 static int video_frame_count = 0;
-// FIXME: needs AV_PIX_FMT_RGB24
+// FIXME: doesnt work atm
 static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize, int depth,
                      const char *filename)
 {
     FILE *f;
-    int i;
-    assert(depth == 24);
+    int x, y;
 
     f = fopen(filename,"w");
     fprintf(f, "P6\n%d %d 255\n", xsize, ysize);
-    for (i = 0; i < ysize; i++)
-        fwrite(buf + i * wrap, 1, xsize*3, f);
+    if (depth == 24)
+	for (y = 0; y < ysize; y++)
+	    fwrite(buf + y * wrap, 1, xsize*3, f);
+    else
+	for (y = 0; y < ysize; y++)
+	    for (x = 0; x < xsize; x+=4)
+		fwrite(buf + y * wrap + x, 1, 3, f);
     fclose(f);
 }
 #endif
@@ -79,6 +85,7 @@ static void update_framebuffer(const uint8_t *buf, int wrap, int xsize, int ysiz
 {
     memcpy(rfbScreen->frameBuffer, buf, xsize * ysize * (depth>>3));
     rfbMarkRectAsModified(rfbScreen,0,0, xsize, ysize);
+    //usleep(500);
 }
 
 static int decode_packet(int *got_frame, int cached)
@@ -121,7 +128,7 @@ static int decode_packet(int *got_frame, int cached)
             }
 
 
-#if 0
+#ifdef DEBUG_PPM
             printf("video_frame%s n:%d coded_n:%d\n",
                    cached ? "(cached)" : "",
                    video_frame_count++, frame->coded_picture_number);
@@ -137,12 +144,11 @@ static int decode_packet(int *got_frame, int cached)
 	    snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
 	    ppm_save(video_dst_data[0], video_dst_linesize[0],
 		 fb_width, fb_height, fb_depth, fn);
-#else
+#endif
 
 	    update_framebuffer(video_dst_data[0], video_dst_linesize[0],
 		 fb_width, fb_height, fb_depth);
 
-#endif
 
 
 #if 0

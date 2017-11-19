@@ -19,6 +19,8 @@ PKG_CHECK_MODULES(VNC, [libvncserver])
 AC_SUBST(VNC_CFLAGS)
 AC_SUBST(VNC_LIBS)
 
+AC_SEARCH_LIBS([pthread_create], [pthread])
+
 dnl Use -Wall if we have gcc.
 changequote(,)dnl
 if test "x$GCC" = "xyes"; then

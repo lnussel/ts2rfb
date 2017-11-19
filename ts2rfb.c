@@ -21,27 +21,28 @@
  * THE SOFTWARE.
  */
 
+#include "main.h"
+
 #include <libavutil/imgutils.h>
 #include <libavutil/samplefmt.h>
 #include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
-#include <rfb/rfb.h>
-#include <rfb/keysym.h>
+#include <pthread.h>
+#include <assert.h>
 
-#define DIMOF(x) (sizeof(x)/sizeof(x[0]))
-
-#define DST_IMG_W   1024
-#define DST_IMG_H   768
-#define DST_IMG_FMT AV_PIX_FMT_RGB32
+static pthread_t capture_tid;
+static int do_capture;
+static int capturing;
+static int need_join;
 
 static AVFormatContext *fmt_ctx = NULL;
 static AVCodecContext *video_dec_ctx = NULL;
 static int width, height;
 static enum AVPixelFormat pix_fmt;
 static AVStream *video_stream = NULL;
-static const char *src_filename = NULL;
+static char *src_filename = NULL;
 
 static uint8_t *video_dst_data[4] = {NULL};
 static int      video_dst_linesize[4];
@@ -50,18 +51,21 @@ static int video_dst_bufsize;
 static int video_stream_idx = -1;
 static AVFrame *frame = NULL;
 static AVPacket pkt;
-static int video_frame_count = 0;
 struct SwsContext *sws_ctx;
 
+static int fb_width;
+static int fb_height;
+static int fb_depth;
 
-static rfbScreenInfoPtr rfbScreen;
-
-// for AV_PIX_FMT_RGB24
-static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
+#ifdef DEBUG_PPM
+static int video_frame_count = 0;
+// FIXME: needs AV_PIX_FMT_RGB24
+static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize, int depth,
                      const char *filename)
 {
     FILE *f;
     int i;
+    assert(depth == 24);
 
     f = fopen(filename,"w");
     fprintf(f, "P6\n%d %d 255\n", xsize, ysize);
@@ -69,10 +73,11 @@ static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize,
         fwrite(buf + i * wrap, 1, xsize*3, f);
     fclose(f);
 }
+#endif
 
-static void update_framebuffer(const uint8_t *buf, int wrap, int xsize, int ysize)
+static void update_framebuffer(const uint8_t *buf, int wrap, int xsize, int ysize, int depth)
 {
-    memcpy(rfbScreen->frameBuffer, buf, xsize * ysize * 4);
+    memcpy(rfbScreen->frameBuffer, buf, xsize * ysize * (depth>>3));
     rfbMarkRectAsModified(rfbScreen,0,0, xsize, ysize);
 }
 
@@ -107,7 +112,7 @@ static int decode_packet(int *got_frame, int cached)
 		pix_fmt = frame->format;
 
 		sws_ctx = sws_getCachedContext(sws_ctx, width, height, pix_fmt,
-					 DST_IMG_W, DST_IMG_H, DST_IMG_FMT,
+					 fb_depth, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24),
 					 0, NULL, NULL, NULL);
 		if (!sws_ctx) {
 		    fprintf(stderr, "Failed to create scale context for conversion\n");
@@ -127,15 +132,15 @@ static int decode_packet(int *got_frame, int cached)
 		    frame->data, frame->linesize, 0, frame->height,
 			video_dst_data, video_dst_linesize);
 
-#ifdef WRITE_FILE
+#ifdef DEBUG_PPM
 	    char fn[1024];
 	    snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
 	    ppm_save(video_dst_data[0], video_dst_linesize[0],
-		 DST_IMG_W, DST_IMG_H, fn);
+		 fb_width, fb_height, fb_depth, fn);
 #else
 
 	    update_framebuffer(video_dst_data[0], video_dst_linesize[0],
-		 DST_IMG_W, DST_IMG_H);
+		 fb_width, fb_height, fb_depth);
 
 #endif
 
@@ -166,8 +171,8 @@ static int open_codec_context(int *stream_idx,
 
     ret = av_find_best_stream(fmt_ctx, type, -1, -1, NULL, 0);
     if (ret < 0) {
-        fprintf(stderr, "Could not find %s stream in input file '%s'\n",
-                av_get_media_type_string(type), src_filename);
+        fprintf(stderr, "Could not find %s stream in input file\n",
+                av_get_media_type_string(type));
         return ret;
     } else {
         stream_index = ret;
@@ -209,71 +214,49 @@ static int open_codec_context(int *stream_idx,
     return 0;
 }
 
-static void HandleKey(rfbBool down,rfbKeySym key,rfbClientPtr cl)
+int video_init (int width, int height, int depth, const char* url)
 {
-    if(down && (key==XK_Escape || key=='q' || key=='Q'))
-	rfbCloseClient(cl);
-}
+    if(src_filename)
+	free(src_filename);
 
-void run_vnc()
-{
-    char* argv[] = {
-	"main",
-	NULL,
-    };
-    int argc = DIMOF(argv)-1;
-    unsigned bitsPerPixel = 24;
-    unsigned bytesPerPixel = 4;
-    char* port;
-
-    rfbScreen = rfbGetScreen(&argc,argv, DST_IMG_W, DST_IMG_H, 8,(bitsPerPixel+7)/8,bytesPerPixel);
-    if(!rfbScreen) {
-	fputs("failed to init rfbscreen", stderr);
-	exit(1);
-    }
-    rfbScreen->desktopName = "HDMI";
-    rfbScreen->alwaysShared = TRUE;
-    rfbScreen->kbdAddEvent = HandleKey;
-
-    rfbScreen->frameBuffer = (char*)malloc(DST_IMG_W*bytesPerPixel*height);
-
-    // for openQA
-    if ((port = getenv("VNC"))) {
-        int i = atoi(port);
-        rfbScreen->port = 5900 + i;
-        rfbScreen->ipv6port = 5900 + i;
-    }
-
-    rfbInitServer(rfbScreen);
-
-    rfbRunEventLoop(rfbScreen,40000,TRUE);
-}
-
-int main (int argc, char *argv[])
-{
-    int ret = 0, got_frame;
-
-    if (argc < 2 || !strcmp(argv[1], "-")) {
+    if (!strcmp(url, "-")) {
 	src_filename = "pipe:";
     } else {
-	src_filename = argv[1];
+	src_filename = strdup(url);
     }
+
+    fb_width = width;
+    fb_height = height;
+    fb_depth = depth;
 
     /* register all formats and codecs */
     av_register_all();
     avformat_network_init();
 
+    return 1;
+}
+
+void _video_capture()
+{
+    int ret = 0, got_frame;
+
+    debug("");
+
+    assert(fb_depth == 32 || fb_depth == 24);
+
     /* open input file, and allocate format context */
     if (avformat_open_input(&fmt_ctx, src_filename, NULL, NULL) < 0) {
         fprintf(stderr, "Could not open source file %s\n", src_filename);
-        exit(1);
+	goto end;
     }
 
     /* retrieve stream information */
     if (avformat_find_stream_info(fmt_ctx, NULL) < 0) {
         fprintf(stderr, "Could not find stream information\n");
-        exit(1);
+	goto end;
     }
+
+    do_capture = 1;
 
     if (open_codec_context(&video_stream_idx, &video_dec_ctx, fmt_ctx, AVMEDIA_TYPE_VIDEO) >= 0) {
         video_stream = fmt_ctx->streams[video_stream_idx];
@@ -291,7 +274,7 @@ int main (int argc, char *argv[])
     }
 
     ret = av_image_alloc(video_dst_data, video_dst_linesize,
-			 DST_IMG_W, DST_IMG_H, DST_IMG_FMT, 1);
+			 fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24), 1);
     if (ret < 0) {
 	fprintf(stderr, "Could not allocate raw video buffer\n");
 	goto end;
@@ -302,7 +285,7 @@ int main (int argc, char *argv[])
     av_dump_format(fmt_ctx, 0, src_filename, 0);
 
     sws_ctx = sws_getContext(width, height, pix_fmt,
-                             DST_IMG_W, DST_IMG_H, DST_IMG_FMT,
+                             fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24),
                              0, NULL, NULL, NULL);
     if (!sws_ctx) {
         fprintf(stderr, "Failed to create scale context for conversion\n");
@@ -317,15 +300,13 @@ int main (int argc, char *argv[])
         goto end;
     }
 
-    run_vnc();
-
     /* initialize packet, set data to NULL, let the demuxer fill it */
     av_init_packet(&pkt);
     pkt.data = NULL;
     pkt.size = 0;
 
     /* read frames from the file */
-    while (av_read_frame(fmt_ctx, &pkt) >= 0) {
+    while (do_capture && av_read_frame(fmt_ctx, &pkt) >= 0) {
         AVPacket orig_pkt = pkt;
         do {
             ret = decode_packet(&got_frame, 0);
@@ -344,14 +325,47 @@ int main (int argc, char *argv[])
         decode_packet(&got_frame, 1);
     } while (got_frame);
 
-    printf("Demuxing succeeded.\n");
+    printf("Demuxing done.\n");
 
-    sleep(1000);
+    ret = 0;
+
 end:
+    video_free();
+    capturing = 0;
+    pthread_exit(ret);
+}
+
+int video_start_capture()
+{
+    if (capturing) {
+	debug("already capturing\n");
+	return 0;
+    }
+    capturing = 1;
+    need_join = 1;
+    pthread_create(&capture_tid, NULL, _video_capture, NULL);
+    return 1;
+}
+
+int video_stop_capture()
+{
+    do_capture = 0;
+    if (need_join) {
+	if (!capturing)
+	    debug("capture thread exited too early\n");
+	pthread_join(capture_tid, NULL);
+	need_join = 0;
+    }
+
+    return 1;
+}
+
+void video_free()
+{
     avcodec_free_context(&video_dec_ctx);
     avformat_close_input(&fmt_ctx);
     av_frame_free(&frame);
     av_free(video_dst_data[0]);
-
-    return ret < 0;
 }
+
+// vim: sw=4

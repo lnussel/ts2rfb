@@ -21,10 +21,13 @@
  */
 
 #include "main.h"
+#include "serial.h"
 
 rfbScreenInfoPtr rfbScreen;
 
 static int num_clients_connected = -1;
+
+static int serialfd = -1;
 
 static void clientgone(rfbClientPtr cl)
 {
@@ -46,8 +49,15 @@ static enum rfbNewClientAction newclient(rfbClientPtr cl)
     return RFB_CLIENT_ACCEPT;
 }
 
-static void HandleKey(rfbBool down,rfbKeySym key,rfbClientPtr cl)
+static void HandleKey(rfbBool down, rfbKeySym key, rfbClientPtr cl)
 {
+    rfbKeyEventMsg msg = { sz_rfbKeyEventMsg, down, 0, key };
+
+    if (serialfd != -1) {
+	debug("message size %d\n", sizeof(msg));
+	write(serialfd, &msg, sizeof(msg));
+    }
+
     if(down && (key==XK_Escape || key=='q' || key=='Q'))
 	rfbCloseClient(cl);
 }
@@ -57,7 +67,9 @@ int main (int argc, char *argv[])
     unsigned width = 1024;
     unsigned height = 768;
     unsigned depth = 32;
+    char* serialport = NULL;
     char* port;
+    int opt;
 
     rfbScreen = rfbGetScreen(&argc,argv, width, height, 8, /* actually unused */ 3, depth>>3);
     if(!rfbScreen) {
@@ -80,11 +92,28 @@ int main (int argc, char *argv[])
 
     rfbInitServer(rfbScreen);
 
-    if (argc < 2) {
+    while ((opt = getopt(argc, argv, "s:")) != -1) {
+	switch(opt) {
+	    case 's':
+		serialport = strdup(optarg);
+		break;
+	    default:
+	       fprintf(stderr, "Usage: %s [-s serialport] videourl\n", argv[0]);
+	       exit(EXIT_FAILURE);
+
+	}
+    }
+
+    if (argc - optind < 1) {
 	fputs("missing url\n", stderr);
 	exit(1);
     }
-    video_init(width, height, depth, argv[1]);
+
+    if (serialport) {
+	serialfd = open_serial(serialport);
+    }
+
+    video_init(width, height, depth, argv[optind]);
 
     rfbRunEventLoop(rfbScreen, 40000, FALSE);
 

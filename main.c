@@ -82,6 +82,7 @@ int main (int argc, char *argv[])
     rfbScreen->newClientHook = newclient;
 
     rfbScreen->frameBuffer = (char*)malloc(width*height*(depth>>3));
+    memset(rfbScreen->frameBuffer, 0x7F, width*height*(depth>>3));
 
     // for openQA
     if ((port = getenv("VNC"))) {
@@ -104,16 +105,15 @@ int main (int argc, char *argv[])
 	}
     }
 
-    if (argc - optind < 1) {
-	fputs("missing url\n", stderr);
-	exit(1);
-    }
-
     if (serialport) {
 	serialfd = open_serial(serialport);
     }
 
-    video_init(width, height, depth, argv[optind]);
+    if (argc - optind > 0) {
+	video_init(width, height, depth, argv[optind]);
+    } else {
+	fputs("missing video url, will run without output\n", stderr);
+    }
 
     rfbRunEventLoop(rfbScreen, 40000, FALSE);
 

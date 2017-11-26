@@ -343,6 +343,10 @@ end:
 
 int video_start_capture()
 {
+    if (!src_filename) {
+	debug("video not initialized\n");
+	return 0;
+    }
     if (capturing) {
 	debug("already capturing\n");
 	return 0;

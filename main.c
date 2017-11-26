@@ -22,6 +22,7 @@
 
 #include "main.h"
 #include "serial.h"
+#include "usbhiddev.h"
 
 rfbScreenInfoPtr rfbScreen;
 
@@ -53,13 +54,12 @@ static void HandleKey(rfbBool down, rfbKeySym key, rfbClientPtr cl)
 {
     rfbKeyEventMsg msg = { sz_rfbKeyEventMsg, down, 0, key };
 
+    usbhid_handle_key(down, key, cl);
+
     if (serialfd != -1) {
 	debug("message size %d\n", sizeof(msg));
 	write(serialfd, &msg, sizeof(msg));
     }
-
-    if(down && (key==XK_Escape || key=='q' || key=='Q'))
-	rfbCloseClient(cl);
 }
 
 int main (int argc, char *argv[])
@@ -68,6 +68,7 @@ int main (int argc, char *argv[])
     unsigned height = 768;
     unsigned depth = 32;
     char* serialport = NULL;
+    char* usbhiddev = NULL;
     char* port;
     int opt;
 
@@ -93,13 +94,16 @@ int main (int argc, char *argv[])
 
     rfbInitServer(rfbScreen);
 
-    while ((opt = getopt(argc, argv, "s:")) != -1) {
+    while ((opt = getopt(argc, argv, "s:u:")) != -1) {
 	switch(opt) {
 	    case 's':
 		serialport = strdup(optarg);
 		break;
+	    case 'u':
+		usbhiddev = strdup(optarg);
+		break;
 	    default:
-	       fprintf(stderr, "Usage: %s [-s serialport] videourl\n", argv[0]);
+	       fprintf(stderr, "Usage: %s [-s serialport] [-u usbhiddevice] videourl\n", argv[0]);
 	       exit(EXIT_FAILURE);
 
 	}
@@ -107,6 +111,10 @@ int main (int argc, char *argv[])
 
     if (serialport) {
 	serialfd = open_serial(serialport);
+    }
+
+    if (usbhiddev) {
+	usbhid_init(usbhiddev);
     }
 
     if (argc - optind > 0) {
@@ -120,6 +128,10 @@ int main (int argc, char *argv[])
     free(rfbScreen->frameBuffer);
 
     rfbScreenCleanup(rfbScreen);
+
+    if (usbhiddev) {
+	usbhid_close();
+    }
 
     return 0;
 }

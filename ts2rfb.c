@@ -61,7 +61,6 @@ static int fb_depth;
 
 #ifdef DEBUG_PPM
 static int video_frame_count = 0;
-// FIXME: doesnt work atm
 static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize, int depth,
                      const char *filename)
 {
@@ -75,8 +74,8 @@ static void ppm_save(const uint8_t *buf, int wrap, int xsize, int ysize, int dep
 	    fwrite(buf + y * wrap, 1, xsize*3, f);
     else
 	for (y = 0; y < ysize; y++)
-	    for (x = 0; x < xsize; x+=4)
-		fwrite(buf + y * wrap + x, 1, 3, f);
+	    for (x = 0; x < xsize; x++)
+		fwrite(buf + y * wrap + x*4, 1, 3, f);
     fclose(f);
 }
 #endif

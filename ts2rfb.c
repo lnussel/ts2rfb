@@ -106,6 +106,11 @@ int decode_packet(AVPacket* pkt)
             return ret;
         }
 
+	// drop non key frames. make helps against artifacts
+	if (!frame->key_frame) {
+	    return 0;
+	}
+
 	if (frame->width != width || frame->height != height ||
 		frame->format != pix_fmt) {
 	    fprintf(stderr, "Warning: Input video format change:\n"

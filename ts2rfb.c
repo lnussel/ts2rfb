@@ -118,7 +118,7 @@ static int decode_packet(int *got_frame, int cached)
 		pix_fmt = frame->format;
 
 		sws_ctx = sws_getCachedContext(sws_ctx, width, height, pix_fmt,
-					 fb_depth, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24),
+					 fb_depth, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24),
 					 0, NULL, NULL, NULL);
 		if (!sws_ctx) {
 		    fprintf(stderr, "Failed to create scale context for conversion\n");
@@ -279,7 +279,7 @@ void _video_capture()
     }
 
     ret = av_image_alloc(video_dst_data, video_dst_linesize,
-			 fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24), 1);
+			 fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24), 1);
     if (ret < 0) {
 	fprintf(stderr, "Could not allocate raw video buffer\n");
 	goto end;
@@ -290,7 +290,7 @@ void _video_capture()
     av_dump_format(fmt_ctx, 0, src_filename, 0);
 
     sws_ctx = sws_getContext(width, height, pix_fmt,
-                             fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGB32 : AV_PIX_FMT_RGB24),
+                             fb_width, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24),
                              0, NULL, NULL, NULL);
     if (!sws_ctx) {
         fprintf(stderr, "Failed to create scale context for conversion\n");

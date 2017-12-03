@@ -87,66 +87,67 @@ static void update_framebuffer(const uint8_t *buf, int wrap, int xsize, int ysiz
     //usleep(500);
 }
 
-static int decode_packet(int *got_frame, int cached)
+int decode_packet(AVPacket* pkt)
 {
     int ret = 0;
-    int decoded = pkt.size;
 
-    *got_frame = 0;
-
-    if (pkt.stream_index == video_stream_idx) {
+    if (pkt->stream_index == video_stream_idx) {
         /* decode video frame */
-        ret = avcodec_decode_video2(video_dec_ctx, frame, got_frame, &pkt);
+        //ret = avcodec_decode_video2(video_dec_ctx, frame, got_frame, &pkt);
+        ret = avcodec_send_packet(video_dec_ctx, pkt);
         if (ret < 0) {
             fprintf(stderr, "Error decoding video frame (%s)\n", av_err2str(ret));
             return ret;
         }
 
-        if (*got_frame) {
+	ret = avcodec_receive_frame(video_dec_ctx, frame);
+        if (ret < 0) {
+            fprintf(stderr, "Error receiving video frame (%s)\n", av_err2str(ret));
+            return ret;
+        }
 
-            if (frame->width != width || frame->height != height ||
-                frame->format != pix_fmt) {
-                fprintf(stderr, "Warning: Input video format change:\n"
-                        "old: width = %d, height = %d, format = %s\n"
-                        "new: width = %d, height = %d, format = %s\n",
-                        width, height, av_get_pix_fmt_name(pix_fmt),
-                        frame->width, frame->height,
-                        av_get_pix_fmt_name(frame->format));
+	if (frame->width != width || frame->height != height ||
+		frame->format != pix_fmt) {
+	    fprintf(stderr, "Warning: Input video format change:\n"
+		    "old: width = %d, height = %d, format = %s\n"
+		    "new: width = %d, height = %d, format = %s\n",
+		    width, height, av_get_pix_fmt_name(pix_fmt),
+		    frame->width, frame->height,
+		    av_get_pix_fmt_name(frame->format));
 
-		width = frame->width;
-		height = frame->height;
-		pix_fmt = frame->format;
+	    width = frame->width;
+	    height = frame->height;
+	    pix_fmt = frame->format;
 
-		sws_ctx = sws_getCachedContext(sws_ctx, width, height, pix_fmt,
-					 fb_depth, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24),
-					 0, NULL, NULL, NULL);
-		if (!sws_ctx) {
-		    fprintf(stderr, "Failed to create scale context for conversion\n");
-		    return -1;
-		}
-            }
+	    sws_ctx = sws_getCachedContext(sws_ctx, width, height, pix_fmt,
+		    fb_depth, fb_height, (fb_depth == 32 ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24),
+		    0, NULL, NULL, NULL);
+	    if (!sws_ctx) {
+		fprintf(stderr, "Failed to create scale context for conversion\n");
+		return -1;
+	    }
+	}
 
-
-#ifdef DEBUG_PPM
-            printf("video_frame%s n:%d coded_n:%d\n",
-                   cached ? "(cached)" : "",
-                   video_frame_count++, frame->coded_picture_number);
-#endif
-
-	    /* convert to destination format */
-	    sws_scale(sws_ctx,
-		    frame->data, frame->linesize, 0, frame->height,
-			video_dst_data, video_dst_linesize);
 
 #ifdef DEBUG_PPM
-	    char fn[1024];
-	    snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
-	    ppm_save(video_dst_data[0], video_dst_linesize[0],
-		 fb_width, fb_height, fb_depth, fn);
+	printf("video_frame n:%d coded_n:%d\n",
+	       video_frame_count++, frame->coded_picture_number);
 #endif
 
-	    update_framebuffer(video_dst_data[0], video_dst_linesize[0],
-		 fb_width, fb_height, fb_depth);
+	/* convert to destination format */
+	sws_scale(sws_ctx,
+		frame->data, frame->linesize, 0, frame->height,
+		    video_dst_data, video_dst_linesize);
+
+#ifdef DEBUG_PPM
+	char fn[1024];
+	snprintf(fn, sizeof(fn), "frame-%d.ppm", video_frame_count);
+	ppm_save(video_dst_data[0], video_dst_linesize[0],
+	     fb_width, fb_height, fb_depth, fn);
+#endif
+
+	update_framebuffer(video_dst_data[0], video_dst_linesize[0],
+	     fb_width, fb_height, fb_depth);
 
 
 
@@ -160,10 +161,9 @@ static int decode_packet(int *got_frame, int cached)
             /* write to rawvideo file */
             fwrite(video_dst_data[0], 1, video_dst_bufsize, video_dst_file);
 #endif
-        }
     }
 
-    return decoded;
+    return ret;
 }
 
 static int open_codec_context(int *stream_idx,
@@ -243,7 +243,7 @@ int video_init (int width, int height, int depth, const char* url)
 
 void _video_capture()
 {
-    int ret = 0, got_frame;
+    int ret = 0;
 
     debug("");
 
@@ -312,23 +312,14 @@ void _video_capture()
 
     /* read frames from the file */
     while (do_capture && av_read_frame(fmt_ctx, &pkt) >= 0) {
-        AVPacket orig_pkt = pkt;
-        do {
-            ret = decode_packet(&got_frame, 0);
-            if (ret < 0)
-                break;
-            pkt.data += ret;
-            pkt.size -= ret;
-        } while (pkt.size > 0);
-        av_packet_unref(&orig_pkt);
+	decode_packet(&pkt);
+        av_packet_unref(&pkt);
     }
 
     /* flush cached frames */
     pkt.data = NULL;
     pkt.size = 0;
-    do {
-        decode_packet(&got_frame, 1);
-    } while (got_frame);
+    decode_packet(&pkt);
 
     printf("Demuxing done.\n");
 
